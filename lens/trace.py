@@ -20,6 +20,7 @@ Design decisions worth defending:
 
 from __future__ import annotations
 
+import hashlib
 import time
 from contextlib import contextmanager
 from contextvars import ContextVar
@@ -30,8 +31,10 @@ from . import pricing
 from .config import canonical_name, default_model, resolve_provider
 from .db import Store, new_id
 from .providers import ChatResult, get_provider
+from .writer import AsyncWriter
 
 MAX_PAYLOAD_CHARS = 8000
+SAMPLE_PRECISION = 10_000
 
 _current_run: ContextVar["Run | None"] = ContextVar("lens_current_run", default=None)
 _current_spans: ContextVar[tuple["Span", ...]] = ContextVar("lens_span_stack", default=())
@@ -140,6 +143,7 @@ class Run:
     started_at: float = field(default_factory=time.time)
     ended_at: float | None = None
     duration_ms: float | None = None
+    sampled: bool = True
     spans: list[Span] = field(default_factory=list)
 
     _t0: float = field(default_factory=time.perf_counter, repr=False)
@@ -193,13 +197,38 @@ class Lens:
         store: Store | None = None,
         provider: str | None = None,
         model: str | None = None,
+        sample_rate: float = 1.0,
+        async_write: bool = False,
+        writer_kwargs: dict | None = None,
     ) -> None:
         self.project = project
         self.store = store or Store()
         self.provider = canonical_name(provider or resolve_provider().name)
         self.model = model or default_model(self.provider)
+        self.sample_rate = max(0.0, min(1.0, sample_rate))
+        self.writer = (
+            AsyncWriter(self.store, **(writer_kwargs or {})) if async_write else None
+        )
 
-    # ------------------------------------------------------------ lifecycle
+    # -------------------------------------------------------------- sampling
+
+    def is_sampled(self, run_id: str) -> bool:
+        """Head-based sampling, decided once per run from its id.
+
+        Deterministic rather than random for two reasons: a retry of the same run
+        gets the same decision, and you can reproduce a specific trace by asking
+        for its id. Sampling per span instead would produce traces with holes —
+        a waterfall missing its middle says less than no waterfall at all.
+        """
+        if self.sample_rate >= 1.0:
+            return True
+        if self.sample_rate <= 0.0:
+            return False
+        digest = hashlib.sha256(run_id.encode("utf-8")).hexdigest()
+        bucket = int(digest[:8], 16) % SAMPLE_PRECISION
+        return bucket < int(self.sample_rate * SAMPLE_PRECISION)
+
+    # ------------------------------------------------------------- lifecycle
 
     @contextmanager
     def trace(
@@ -212,8 +241,9 @@ class Lens:
         tags: list[str] | None = None,
         metadata: dict | None = None,
     ) -> Iterator[Run]:
+        run_id = new_id("run")
         run = Run(
-            id=new_id("run"),
+            id=run_id,
             project=self.project,
             name=name,
             input=input,
@@ -221,6 +251,7 @@ class Lens:
             origin=origin,
             tags=tags or [],
             metadata=metadata or {},
+            sampled=self.is_sampled(run_id),
         )
         run_token = _current_run.set(run)
         span_token = _current_spans.set(())
@@ -235,7 +266,7 @@ class Lens:
             for span in reversed(stack):
                 span.close(error=error if span.status == "ok" else None)
             run.close(error=error)
-            _flush(self.store, run)
+            self._flush(run)
             _current_spans.reset(span_token)
             _current_run.reset(run_token)
 
@@ -280,7 +311,7 @@ class Lens:
             _current_spans.reset(stack_token)
             if implicit:
                 run.close()
-                _flush(self.store, run)
+                self._flush(run)
                 _current_spans.reset(span_token)  # type: ignore[arg-type]
                 _current_run.reset(run_token)  # type: ignore[arg-type]
 
@@ -309,8 +340,42 @@ class Lens:
     def __call__(self, messages: list[dict], **kwargs: Any) -> ChatResult:
         return self.llm(messages, **kwargs)
 
+    # ------------------------------------------------------------- persistence
 
-def _flush(store: Store, run: Run) -> None:
-    store.save_run(run.to_dict())
-    for span in run.spans:
-        store.save_span(span.to_dict())
+    def _flush(self, run: Run) -> None:
+        """Persist a finished run.
+
+        Unsampled runs are dropped here rather than earlier: the spans were still
+        built, so user code takes an identical path whether or not it is sampled.
+        That keeps a sampling toggle from changing behaviour under test.
+        """
+        if not run.sampled:
+            return
+
+        run_dict = run.to_dict()
+        span_dicts = [span.to_dict() for span in run.spans]
+        if self.writer is not None:
+            self.writer.submit_run(run_dict)
+            self.writer.submit_spans(span_dicts)
+        else:
+            self.store.save_run(run_dict)
+            self.store.save_spans_batch(span_dicts)
+
+    def flush(self) -> None:
+        """Block until buffered spans are durable. No-op when writing synchronously."""
+        if self.writer is not None:
+            self.writer.flush()
+
+    def close(self) -> None:
+        if self.writer is not None:
+            self.writer.close()
+            self.writer = None
+
+    def writer_stats(self) -> dict | None:
+        return self.writer.stats.as_dict() if self.writer is not None else None
+
+    def __enter__(self) -> "Lens":
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        self.close()

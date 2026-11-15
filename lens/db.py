@@ -174,6 +174,51 @@ class Store:
                 ),
             )
 
+    def save_spans_batch(self, spans: list[dict]) -> None:
+        """Write many spans in a single transaction.
+
+        One transaction per model call is fine for a demo and fatal for a service:
+        at a few hundred requests per second the fsync rate becomes the bottleneck,
+        and SQLite starts returning `database is locked` under contention.
+
+        Run totals are recomputed once per affected run rather than once per span,
+        so the cost of bookkeeping stays proportional to runs, not spans.
+        """
+        if not spans:
+            return
+
+        rows = [
+            (
+                span["id"], span["run_id"], span.get("parent_id"), span["name"],
+                span.get("kind", "custom"), span.get("status", "ok"), span.get("error"),
+                span["started_at"], span.get("duration_ms"), span.get("model"),
+                span.get("provider"), span.get("prompt_tokens", 0),
+                span.get("completion_tokens", 0), span.get("cost_usd", 0.0),
+                _dumps(span.get("input")), _dumps(span.get("output")),
+                _dumps(span.get("attributes")),
+            )
+            for span in spans
+        ]
+
+        with self.connect() as conn:
+            conn.executemany(
+                """INSERT OR REPLACE INTO spans
+                   (id, run_id, parent_id, name, kind, status, error, started_at,
+                    duration_ms, model, provider, prompt_tokens, completion_tokens,
+                    cost_usd, input, output, attributes)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                rows,
+            )
+            for run_id in {span["run_id"] for span in spans}:
+                conn.execute(
+                    """UPDATE runs SET
+                         total_cost_usd = (SELECT COALESCE(SUM(cost_usd), 0) FROM spans WHERE run_id = ?),
+                         total_tokens   = (SELECT COALESCE(SUM(prompt_tokens + completion_tokens), 0)
+                                           FROM spans WHERE run_id = ?)
+                       WHERE id = ?""",
+                    (run_id, run_id, run_id),
+                )
+
     def save_span(self, span: dict) -> None:
         with self.connect() as conn:
             conn.execute(
