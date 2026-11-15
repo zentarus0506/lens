@@ -1,0 +1,14 @@
+# Keep the build context small: the venv alone is hundreds of megabytes and
+# invalidates the layer cache on every change.
+.venv/
+data/
+.git/
+.pytest_cache/
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.env
+.DS_Store
+*.md.bak

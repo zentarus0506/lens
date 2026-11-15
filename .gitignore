@@ -1,0 +1,17 @@
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+*.egg-info/
+build/
+dist/
+
+# Traces are local artefacts, not source
+data/*.db
+data/*.db-wal
+data/*.db-shm
+
+# Secrets
+.env
+
+.DS_Store
