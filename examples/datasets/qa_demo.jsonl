@@ -1,0 +1,15 @@
+{"id": "q01", "input": "span 和 trace 是什么关系？", "expected": "Span 是 trace 中的单个计时步骤，嵌套组成 trace。", "keywords": [["span", "跨度"], ["trace", "追踪", "调用链"]]}
+{"id": "q02", "input": "怎么定位一次请求里延迟花在哪了？", "expected": "通过链路追踪查看每个 span 的耗时，找出最慢的一步。", "keywords": [["latency", "延迟", "耗时"], ["tracing", "trace", "追踪", "链路"]]}
+{"id": "q03", "input": "为什么不能只看平均延迟？", "expected": "平均值会掩盖长尾，应该看 P95/P99 分位数。", "keywords": [["latency", "延迟", "耗时", "分位", "p95", "P95", "长尾"]]}
+{"id": "q04", "input": "如何评估一次 prompt 改动是好是坏？", "expected": "在固定评测集上跑 A/B，并用置信区间判断差异是否显著。", "keywords": [["evaluation", "评估", "评测", "baseline", "基线", "对比"]]}
+{"id": "q05", "input": "每次请求的成本由什么决定？", "expected": "由 token 数量和单价相乘决定，输入输出分别计价。", "keywords": [["cost", "成本", "费用", "花费"], ["token", "price", "价格", "单价"]]}
+{"id": "q06", "input": "如何在保证质量的前提下降低 token 开销？", "expected": "压缩上下文、缓存、改用小模型，并持续监控每次请求成本。", "keywords": [["cost", "成本", "费用", "token", "开销"]]}
+{"id": "q07", "input": "什么时候应该从大模型换成小模型？", "expected": "当任务足够窄、评测显示小模型质量差距可接受、而成本延迟敏感时。", "keywords": [["expensive", "cost", "成本", "费用", "昂贵", "开销"]]}
+{"id": "q08", "input": "自动评分器的结果能直接信吗？", "expected": "不能，必须先和人工标注比对一致性，计算 Kappa 等指标。", "keywords": [["evaluation", "评估", "评测", "baseline", "基线", "一致性", "kappa", "Kappa"]]}
+{"id": "q09", "input": "只有 20 条测试用例，结论可信吗？", "expected": "样本太小时区间很宽，需要用 bootstrap 给出不确定度。", "keywords": [["evaluation", "评估", "评测", "区间", "置信", "样本", "bootstrap"]]}
+{"id": "q10", "input": "链路追踪能回答哪些延迟之外的问题？", "expected": "还能回答为什么慢，而不只是慢在哪。", "keywords": [["latency", "延迟", "耗时"], ["tracing", "trace", "追踪", "为什么", "原因"]]}
+{"id": "q11", "input": "生产环境出现慢请求，第一步看什么？", "expected": "先看追踪里各 span 的耗时分布和 P95 延迟。", "keywords": [["latency", "延迟", "耗时", "p95", "P95", "分位", "span"]]}
+{"id": "q12", "input": "为什么要在发布前做回归评测？", "expected": "没有基线就无法判断改动是提升还是退步。", "keywords": [["evaluation", "评估", "评测", "baseline", "基线", "回归"]]}
+{"id": "q13", "input": "缓存对延迟和成本分别有什么影响？", "expected": "缓存同时降低延迟和 token 成本，但会引入一致性问题。", "keywords": [["latency", "延迟", "耗时", "cost", "成本", "费用"]]}
+{"id": "q14", "input": "如何证明优化真的生效了，而不是运气好？", "expected": "做配对比较并给出置信区间与 p 值，避免把噪声当效果。", "keywords": [["baseline", "基线", "置信", "显著", "区间", "p值", "噪声"]]}
+{"id": "q15", "input": "一次调用里最贵的是哪部分？怎么查？", "expected": "按模型和 span 聚合成本，找出单价高或 token 多的调用点。", "keywords": [["cost", "成本", "费用", "token", "单价"]]}
