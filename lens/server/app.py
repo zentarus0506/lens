@@ -98,8 +98,13 @@ def create_app(store: Store | None = None) -> FastAPI:
 def main() -> None:
     import uvicorn
 
-    port = int(os.environ.get("LENS_PORT", "8765"))
-    uvicorn.run(create_app(), host=os.environ.get("LENS_HOST", "127.0.0.1"), port=port)
+    # Hosted platforms inject PORT and expect a 0.0.0.0 bind. Locally we stay on
+    # loopback unless explicitly told otherwise, so a stray deploy never exposes
+    # a developer's trace database to the network.
+    hosted = bool(os.environ.get("PORT"))
+    port = int(os.environ.get("PORT") or os.environ.get("LENS_PORT", "8765"))
+    host = os.environ.get("LENS_HOST") or ("0.0.0.0" if hosted else "127.0.0.1")
+    uvicorn.run(create_app(), host=host, port=port)
 
 
 if __name__ == "__main__":
