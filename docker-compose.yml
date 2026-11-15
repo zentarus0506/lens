@@ -1,0 +1,21 @@
+services:
+  lens:
+    build: .
+    image: lens:0.1.0
+    container_name: lens
+    ports:
+      - "8765:8765"
+    volumes:
+      # Traces are the product; keep them outside the container lifecycle.
+      - ./data:/app/data
+    env_file:
+      - .env
+    environment:
+      LENS_HOST: 0.0.0.0
+      LENS_PORT: 8765
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
